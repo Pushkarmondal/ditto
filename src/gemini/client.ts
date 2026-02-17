@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { recordRequest } from "../services/metrics.service";
 
 const ai = new GoogleGenAI({});
 
@@ -22,10 +23,10 @@ export async function generateContent({model, prompts }: generateParams) {
       contents: prompts,
     });
     const latency = Date.now() - start;
-    const latencySeconds = latency / 1000;
-    return {text: cleanOutput(response.text || ""), latencySeconds};
+    const latencyMs = latency / 1000;
+    return {text: cleanOutput(response.text || ""), latencyMs};
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return {text: "", latency: 0};
+    return {text: "", latencyMs: 0};
   }
 }
