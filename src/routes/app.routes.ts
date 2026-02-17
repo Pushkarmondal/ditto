@@ -2,6 +2,7 @@ import { Router } from "express"
 import { generateContent } from "../gemini/client"
 import { generateCacheKey, getExactCache, setExactCache } from "../services/cache.service"
 import { getMetrics, recordRequest } from "../services/metrics.service"
+import { embedding } from "../services/embedding.service"
 
 const router = Router()
 
@@ -48,6 +49,24 @@ router.post("/chat", async(req, res) => {
             error: "Failed to generate content",
         });
     }
+})
+
+router.post("/embedding", async(req, res) => {
+    const result = await embedding({
+        model: "gemini-embedding-001",
+        text: "Explain how AI works",
+    });
+
+    console.log("Dimension:", result.embedding_dimension);
+    
+    return res.json({
+        success: true,
+        embedding: result.embedding,
+        embedding_dimension: result.embedding_dimension,
+        provider_latency_ms: result.provider_latency_ms,
+    });
+
+
 })
 
 router.get("/metrics", (req, res) => {
