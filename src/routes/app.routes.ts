@@ -1,5 +1,6 @@
 import { Router } from "express"
 import { generateContent } from "../gemini/client"
+import { generateCacheKey, getExactCache, setExactCache } from "../services/cache.service"
 
 const router = Router()
 
@@ -15,7 +16,17 @@ router.post("/chat", async(req, res) => {
                 error: "model and prompts are required",
             });
         }
+        const checkCache = generateCacheKey({model, prompts})
+        const cacheKey = await getExactCache(checkCache)
+        if (cacheKey) {
+            return res.json({
+                success: true,
+                cached: true,
+                ...cacheKey,
+            })
+        }
         const result = await generateContent({model, prompts})
+        await setExactCache(checkCache, result);
         return res.json({
             success: true,
             cached: false,
