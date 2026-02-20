@@ -9,8 +9,9 @@ export async function upsertSemanticEntry({
   embedding: number[];
   metadata: Record<string, any>;
 }) {
+  // The SDK expects { records: [...] }
   await index.upsert({
-    records: [       
+    records: [
       {
         id,
         values: embedding,
