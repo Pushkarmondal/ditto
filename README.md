@@ -91,8 +91,6 @@ GET /metrics
 }
 ```
 
-Because "I reduced your bill by 43%" is better than a GitHub star.
-
 ---
 
 ## Quick Start
@@ -100,7 +98,7 @@ Because "I reduced your bill by 43%" is better than a GitHub star.
 ```bash
 git clone https://github.com/yourhandle/ditto
 cd ditto
-cp .env.example .env        # add your OpenAI key
+cp .env.example .env        # add your OpenAI key/some other API_KEY(I used GEMINI_API here).
 docker compose up
 ```
 

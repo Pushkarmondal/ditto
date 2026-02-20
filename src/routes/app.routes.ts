@@ -12,6 +12,7 @@ import {
   upsertSemanticEntry,
 } from "../repositories/semantic.repository";
 import { index } from "../infra/pinecone";
+import { calculateGeminiCost } from "../services/metrics";
 
 const router = Router();
 
@@ -134,6 +135,119 @@ router.get("/health", (req, res) => {
 //   }
 // });
 
+// router.post("/chat", async (req, res) => {
+//   try {
+//     const { model, prompts } = req.body;
+//     const SIMILARITY_THRESHOLD = 0.85;
+
+//     if (!model || !prompts) {
+//       return res.status(400).json({
+//         error: "model and prompts are required",
+//       });
+//     }
+
+//     const start = Date.now();
+
+//     // 1. Exact cache check (Redis)
+//     const checkCache = generateCacheKey({ model, prompts });
+//     const cacheKey = await getExactCache(checkCache);
+//     if (cacheKey) {
+//       const totalLatency = Date.now() - start;
+//       recordRequest({ latencyMs: totalLatency, type: "exact", costSaved });
+//       return res.json({
+//         success: true,
+//         cached: true,
+//         type: "exact_cache",
+//         ...cacheKey,
+//         total_latency_ms: totalLatency,
+//       });
+//     }
+
+//     // 2. Generate embedding
+//     const embeddingResult = await embedding({
+//       model: "gemini-embedding-001",
+//       text: prompts,
+//     });
+//     // console.log("Embedding length:", embeddingResult.embedding.length);
+
+//     // 3. Semantic cache check (Pinecone)
+//     const nearest = await queryNearest({
+//       embedding: embeddingResult.embedding,
+//       model,
+//     });
+
+//     // console.log("Nearest:", JSON.stringify(nearest, null, 2));
+//     // console.log("Score:", nearest?.score);
+
+//     if (nearest && nearest.score && nearest.score > SIMILARITY_THRESHOLD) {
+//       const metadata = nearest.metadata as any;
+//       const response =
+//         typeof metadata?.response === "string"
+//           ? JSON.parse(metadata.response)
+//           : metadata?.response;
+
+//       if (response) {
+//         const totalLatency = Date.now() - start;
+//         recordRequest({ latencyMs: totalLatency, type: "semantic", costSaved });
+//         return res.json({
+//           cached: true,
+//           type: "semantic_cache",
+//           similarity_score: nearest.score,
+//           total_latency_ms: totalLatency,
+//           ...response,
+//         });
+//       } else {
+//         console.warn("Semantic hit but no response in metadata");
+//       }
+//     }
+
+//     // 4. Cache miss — call LLM
+//     const result = await generateContent({ model, prompts });
+
+//     const llmCost = calculateGeminiCost({
+//       inputText: prompts,
+//       outputText: result.text ?? "",
+//     });
+
+//     // 5. Store in Redis (exact cache)
+//     await setExactCache(checkCache, result);
+
+//     // 6. Store in Pinecone (semantic cache)
+//     await upsertSemanticEntry({
+//       id: crypto.randomUUID(),
+//       embedding: embeddingResult.embedding,
+//       metadata: {
+//         model,
+//         prompt: prompts,
+//         response: JSON.stringify(result),
+//         response_text: result.text ?? "",
+//         response_latency_ms: result.latencyMs ?? 0,
+//         created_at: Date.now(),
+//       },
+//     });
+
+//     const stats = await index.describeIndexStats();
+//     // console.log("Index stats:", stats);
+
+//     const totalLatency = Date.now() - start;
+//     recordRequest({ latencyMs: totalLatency, type: "llm", llmCost });
+
+//     return res.json({
+//       success: true,
+//       cached: false,
+//       type: "llm",
+//       ...result,
+//       total_latency_ms: totalLatency,
+//     });
+//   } catch (error) {
+//     console.error("LLM Error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       error: "Failed to generate content",
+//     });
+//   }
+// });
+
 router.post("/chat", async (req, res) => {
   try {
     const { model, prompts } = req.body;
@@ -147,12 +261,24 @@ router.post("/chat", async (req, res) => {
 
     const start = Date.now();
 
-    // 1. Exact cache check (Redis)
+    // 1️⃣ Exact cache (Redis)
     const checkCache = generateCacheKey({ model, prompts });
     const cacheKey = await getExactCache(checkCache);
+
     if (cacheKey) {
       const totalLatency = Date.now() - start;
-      recordRequest(totalLatency, true);
+
+      const costSaved = calculateGeminiCost({
+        inputText: prompts,
+        outputText: cacheKey.text ?? "",
+      });
+
+      recordRequest({
+        type: "exact",
+        latencyMs: totalLatency,
+        costSaved,
+      });
+
       return res.json({
         success: true,
         cached: true,
@@ -162,24 +288,21 @@ router.post("/chat", async (req, res) => {
       });
     }
 
-    // 2. Generate embedding
+    // 2️⃣ Generate embedding
     const embeddingResult = await embedding({
       model: "gemini-embedding-001",
       text: prompts,
     });
-    console.log("Embedding length:", embeddingResult.embedding.length);
 
-    // 3. Semantic cache check (Pinecone)
+    // 3️⃣ Semantic cache (Pinecone)
     const nearest = await queryNearest({
       embedding: embeddingResult.embedding,
       model,
     });
 
-    console.log("Nearest:", JSON.stringify(nearest, null, 2));
-    console.log("Score:", nearest?.score);
-
     if (nearest && nearest.score && nearest.score > SIMILARITY_THRESHOLD) {
       const metadata = nearest.metadata as any;
+
       const response =
         typeof metadata?.response === "string"
           ? JSON.parse(metadata.response)
@@ -187,7 +310,18 @@ router.post("/chat", async (req, res) => {
 
       if (response) {
         const totalLatency = Date.now() - start;
-        recordRequest(totalLatency, true);
+
+        const costSaved = calculateGeminiCost({
+          inputText: prompts,
+          outputText: response.text ?? "",
+        });
+
+        recordRequest({
+          type: "semantic",
+          latencyMs: totalLatency,
+          costSaved,
+        });
+
         return res.json({
           cached: true,
           type: "semantic_cache",
@@ -195,18 +329,29 @@ router.post("/chat", async (req, res) => {
           total_latency_ms: totalLatency,
           ...response,
         });
-      } else {
-        console.warn("Semantic hit but no response in metadata");
       }
     }
 
-    // 4. Cache miss — call LLM
+    // 4️⃣ LLM fallback
     const result = await generateContent({ model, prompts });
 
-    // 5. Store in Redis (exact cache)
+    const totalLatency = Date.now() - start;
+
+    const llmCost = calculateGeminiCost({
+      inputText: prompts,
+      outputText: result.text ?? "",
+    });
+
+    recordRequest({
+      type: "llm",
+      latencyMs: totalLatency,
+      llmCost,
+    });
+
+    // 5️⃣ Store in Redis
     await setExactCache(checkCache, result);
 
-    // 6. Store in Pinecone (semantic cache)
+    // 6️⃣ Store in Pinecone
     await upsertSemanticEntry({
       id: crypto.randomUUID(),
       embedding: embeddingResult.embedding,
@@ -220,12 +365,6 @@ router.post("/chat", async (req, res) => {
       },
     });
 
-    const stats = await index.describeIndexStats();
-    console.log("Index stats:", stats);
-
-    const totalLatency = Date.now() - start;
-    recordRequest(totalLatency, false);
-
     return res.json({
       success: true,
       cached: false,
@@ -233,6 +372,7 @@ router.post("/chat", async (req, res) => {
       ...result,
       total_latency_ms: totalLatency,
     });
+
   } catch (error) {
     console.error("LLM Error:", error);
     return res.status(500).json({
@@ -262,5 +402,18 @@ router.get("/metrics", (req, res) => {
   const metrics = getMetrics();
   res.json(metrics);
 });
+
+router.get("/getmetrics", async(req, res) => {
+  try {
+    // const hitRate = ((getMetrics().exact_hits + getMetrics().semantic_hits) / (getMetrics().total_requests)) * 100;
+    res.json({
+      ...getMetrics()
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Can't get metrics for process!"
+    })
+  }
+})
 
 export default router;
