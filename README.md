@@ -85,7 +85,7 @@ GET /metrics
   "total_requests": 10482,
   "cache_hit_rate": "43%",
   "tokens_saved": 1820034,
-  "dollars_saved": "$3,742.18",
+  "dollars_saved": "$200.18",
   "avg_latency_hit": "48ms",
   "avg_latency_miss": "1.8s"
 }
