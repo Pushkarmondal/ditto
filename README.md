@@ -167,7 +167,7 @@ Right now, ditto's cache is **global** — a response cached for one user's quer
 - **Per-request cache opt-out header** — Allow clients to signal that a request must never be cached or served from cache:
   ```
   X-Ditto-Cache: bypass
-  X-Ditto-Cache: no-store
+  X-Ditto-Cache: no-store            
   ```
 - **Context fingerprinting** — Incorporate a hash of stable user-context metadata (locale, user role, subscription tier) into the embedding lookup. Two users asking the same question but in different contexts will no longer match each other's cached responses.
 - **Cache entry ACLs** — Each cache entry carries an owner tag. Even if a cross-namespace lookup were attempted, an ACL layer would block the read unless the requesting identity matches the owner.
